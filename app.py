@@ -6,9 +6,18 @@ from flask_sqlalchemy import SQLAlchemy
 app = Flask(__name__)
 app.secret_key = 'cyber_barber_secret_key_2026'
 
-# إعداد قاعدة البيانات
+# إعداد قاعدة البيانات وحذف القديمة التالفة تلقائياً عند الإقلاع
 db_path = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(db_path, 'cyber_barber.db')
+db_file = os.path.join(db_path, 'cyber_barber.db')
+
+if os.path.exists(db_file):
+    try:
+        os.remove(db_file)
+        print("تم حذف قاعدة البيانات القديمة بنجاح.")
+    except Exception as e:
+        print(f"خطأ أثناء الحذف: {e}")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_file
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -423,9 +432,8 @@ def admin_logout():
     session.pop('is_admin', None)
     return redirect(url_for('home'))
 
-# ----------------- إعادة ضبط قاعدة البيانات وإنشائها تلقائياً -----------------
+# ----------------- إنشاء الجداول عند بدء التشغيل -----------------
 if __name__ == '__main__':
     with app.app_context():
-        db.drop_all()  # حذف القديم الذي يسبب المشاكل
-        db.create_all()  # إنشاء الجداول الجديدة بالشكل الصحيح
+        db.create_all()
     app.run(host='0.0.0.0', port=5000)

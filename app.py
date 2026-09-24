@@ -1,12 +1,12 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 app.secret_key = 'cyber_barber_secret_key_2026'
 
-# إعداد قاعدة البيانات لتخزينها بشكل آمن وصحيح
+# إعداد قاعدة البيانات
 db_path = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(db_path, 'cyber_barber.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -38,7 +38,7 @@ class Appointment(db.Model):
     client_phone = db.Column(db.String(20), nullable=False)
     service_type = db.Column(db.String(100), nullable=False)
     appointment_time = db.Column(db.String(50), nullable=False)
-    status = db.Column(db.String(20), default='pending') # pending, accepted, rejected
+    status = db.Column(db.String(20), default='pending')
 
 class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -122,22 +122,10 @@ BOOK_TEMPLATE = BASE_LAYOUT + """
             <div class="card-body">
                 <h3>حجز موعد عند الحلاق: {{ barber.first_name }} {{ barber.last_name }}</h3>
                 <form method="POST">
-                    <div class="mb-3">
-                        <label>اسمك الكريم</label>
-                        <input type="text" name="client_name" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label>رقم هاتفك</label>
-                        <input type="text" name="client_phone" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label>نوع الخدمة</label>
-                        <input type="text" name="service_type" class="form-control" placeholder="مثال: حلاقة شعر + لحية" required>
-                    </div>
-                    <div class="mb-3">
-                        <label>وقت الموعد المفضل</label>
-                        <input type="text" name="appointment_time" class="form-control" placeholder="مثال: اليوم على الساعة 4 عصراً" required>
-                    </div>
+                    <div class="mb-3"><label>اسمك الكريم</label><input type="text" name="client_name" class="form-control" required></div>
+                    <div class="mb-3"><label>رقم هاتفك</label><input type="text" name="client_phone" class="form-control" required></div>
+                    <div class="mb-3"><label>نوع الخدمة</label><input type="text" name="service_type" class="form-control" placeholder="مثال: حلاقة شعر + لحية" required></div>
+                    <div class="mb-3"><label>وقت الموعد المفضل</label><input type="text" name="appointment_time" class="form-control" placeholder="مثال: اليوم على الساعة 4 عصراً" required></div>
                     <button type="submit" class="btn btn-success w-100">إرسال طلب الحجز</button>
                 </form>
             </div>
@@ -155,19 +143,11 @@ BARBER_LOGIN_TEMPLATE = BASE_LAYOUT + """
             <div class="card-body">
                 <h3>تسجيل دخول الحلاقين</h3>
                 <form method="POST">
-                    <div class="mb-3">
-                        <label>اسم المستخدم</label>
-                        <input type="text" name="username" class="form-control" required>
-                    </div>
-                    <div class="mb-3">
-                        <label>كلمة المرور</label>
-                        <input type="password" name="password" class="form-control" required>
-                    </div>
+                    <div class="mb-3"><label>اسم المستخدم</label><input type="text" name="username" class="form-control" required></div>
+                    <div class="mb-3"><label>كلمة المرور</label><input type="password" name="password" class="form-control" required></div>
                     <button type="submit" class="btn btn-primary w-100">دخول</button>
                 </form>
-                <div class="mt-3 text-center">
-                    <a href="/barber_register">تسجيل حساب جديد بكود تفعيل</a>
-                </div>
+                <div class="mt-3 text-center"><a href="/barber_register">تسجيل حساب جديد بكود تفعيل</a></div>
             </div>
         </div>
     </div>
@@ -207,14 +187,7 @@ BARBER_DASHBOARD_TEMPLATE = BASE_LAYOUT + """
 <h4>طلبات المواعيد</h4>
 <table class="table table-striped">
     <thead>
-        <tr>
-            <th>الزبون</th>
-            <th>الهاتف</th>
-            <th>الخدمة</th>
-            <th>الوقت</th>
-            <th>الحالة</th>
-            <th>الإجراء</th>
-        </tr>
+        <tr><th>الزبون</th><th>الهاتف</th><th>الخدمة</th><th>الوقت</th><th>الحالة</th><th>الإجراء</th></tr>
     </thead>
     <tbody>
         {% for appt in appointments %}
@@ -262,7 +235,6 @@ ADMIN_DASHBOARD_TEMPLATE = BASE_LAYOUT + """
 <form method="POST" action="/admin/generate_code" class="mb-4">
     <button type="submit" class="btn btn-primary">توليد كود جديد</button>
 </form>
-
 <h4>أكواد التفعيل الموجودة</h4>
 <ul class="list-group">
     {% for code in codes %}
@@ -326,7 +298,6 @@ def book(barber_id):
         client_phone = request.form.get('client_phone')
         service_type = request.form.get('service_type')
         appointment_time = request.form.get('appointment_time')
-        
         appt = Appointment(barber_id=barber.id, client_name=client_name, client_phone=client_phone, service_type=service_type, appointment_time=appointment_time)
         db.session.add(appt)
         db.session.commit()
@@ -382,9 +353,7 @@ def barber_register():
             flash('كود التفعيل غير صالح أو تم استخدامه مسبقاً!', 'danger')
             return redirect(url_for('barber_register'))
         
-        from datetime import timedelta
-        expiry = datetime.utcnow() + timedelta(days=180) # 6 أشهر
-        
+        expiry = datetime.utcnow() + timedelta(days=180)
         new_barber = Barber(username=username, password=password, first_name=first_name, last_name=last_name, phone=phone, location=location, activation_code_id=code_obj.id, expiry_date=expiry)
         code_obj.is_used = True
         
@@ -454,8 +423,9 @@ def admin_logout():
     session.pop('is_admin', None)
     return redirect(url_for('home'))
 
-# ----------------- تشغيل التطبيق مع إنشاء الجداول تلقائياً -----------------
+# ----------------- إعادة ضبط قاعدة البيانات وإنشائها تلقائياً -----------------
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()
+        db.drop_all()  # حذف القديم الذي يسبب المشاكل
+        db.create_all()  # إنشاء الجداول الجديدة بالشكل الصحيح
     app.run(host='0.0.0.0', port=5000)

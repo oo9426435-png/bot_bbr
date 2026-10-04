@@ -1,439 +1,676 @@
-import os
 from datetime import datetime, timedelta
-from flask import Flask, render_template_string, request, redirect, url_for, session, flash
+import os
+import random
+import string
+from flask import Flask, flash, redirect, render_template_string, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
-app.secret_key = 'cyber_barber_secret_key_2026'
+app.secret_key = "cyber_barber_ultra_modern_secure_2026"
 
-# إعداد قاعدة البيانات وحذف القديمة التالفة تلقائياً عند الإقلاع
-db_path = os.path.abspath(os.path.dirname(__file__))
-db_file = os.path.join(db_path, 'cyber_barber.db')
-
-if os.path.exists(db_file):
-    try:
-        os.remove(db_file)
-        print("تم حذف قاعدة البيانات القديمة بنجاح.")
-    except Exception as e:
-        print(f"خطأ أثناء الحذف: {e}")
-
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_file
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config["SQLALCHEMY_DATABASE_URI"] = (
+    "sqlite:///" + os.path.join(basedir, "cyber_barber.db")
+)
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
-# ----------------- نماذج قاعدة البيانات (Models) -----------------
+# ----------------- Models -----------------
+
+
 class ActivationCode(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(50), unique=True, nullable=False)
-    is_used = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+  id = db.Column(db.Integer, primary_key=True)
+  code = db.Column(db.String(30), unique=True, nullable=False)
+  is_used = db.Column(db.Boolean, default=False)
+  activated_at = db.Column(db.DateTime, nullable=True)
+  expires_at = db.Column(db.DateTime, nullable=True)
+  created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class Barber(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(100), nullable=False)
-    first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=False)
-    phone = db.Column(db.String(20), nullable=False)
-    location = db.Column(db.String(100), nullable=False)
-    activation_code_id = db.Column(db.Integer, db.ForeignKey('activation_code.id'), nullable=False)
-    expiry_date = db.Column(db.DateTime, nullable=False)
+  id = db.Column(db.Integer, primary_key=True)
+  activation_code_id = db.Column(
+      db.Integer, db.ForeignKey("activation_code.id"), nullable=True
+  )
+  first_name = db.Column(db.String(50), nullable=False)
+  last_name = db.Column(db.String(50), nullable=False)
+  username = db.Column(db.String(50), unique=True, nullable=False)
+  phone = db.Column(db.String(20), nullable=False)
+  location = db.Column(db.String(150), nullable=False)
+  password = db.Column(db.String(100), nullable=False)
+
+  activation_code = db.relationship(
+      "ActivationCode", backref=db.backref("barber", uselist=False)
+  )
+
+
+class Service(db.Model):
+  id = db.Column(db.Integer, primary_key=True)
+  barber_id = db.Column(
+      db.Integer, db.ForeignKey("barber.id"), nullable=False
+  )
+  name = db.Column(db.String(100), nullable=False)
+  price = db.Column(db.Float, nullable=False)
+  duration = db.Column(db.Integer, nullable=False)
+  barber = db.relationship(
+      "Barber", backref=db.backref("services", lazy=True)
+  )
+
 
 class Appointment(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=False)
-    client_name = db.Column(db.String(50), nullable=False)
-    client_phone = db.Column(db.String(20), nullable=False)
-    service_type = db.Column(db.String(100), nullable=False)
-    appointment_time = db.Column(db.String(50), nullable=False)
-    status = db.Column(db.String(20), default='pending')
+  id = db.Column(db.Integer, primary_key=True)
+  barber_id = db.Column(
+      db.Integer, db.ForeignKey("barber.id"), nullable=False
+  )
+  customer_name = db.Column(db.String(100), nullable=False)
+  phone = db.Column(db.String(20), nullable=False)
+  service_id = db.Column(
+      db.Integer, db.ForeignKey("service.id"), nullable=False
+  )
+  date_time = db.Column(db.String(50), nullable=False)
+  status = db.Column(db.String(20), default="قيد الانتظار")
+  updated_at = db.Column(
+      db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+  )
+  service = db.relationship("Service", backref=db.backref("appointments", lazy=True))
+  barber = db.relationship(
+      "Barber", backref=db.backref("appointments", lazy=True)
+  )
+
 
 class Review(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=False)
-    client_name = db.Column(db.String(50), nullable=False)
-    rating = db.Column(db.Integer, nullable=False)
-    comment = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+  id = db.Column(db.Integer, primary_key=True)
+  barber_id = db.Column(
+      db.Integer, db.ForeignKey("barber.id"), nullable=False
+  )
+  client_name = db.Column(db.String(100), nullable=False)
+  rating = db.Column(db.Integer, nullable=False)
+  comment = db.Column(db.Text, nullable=True)
+  created_at = db.Column(db.DateTime, default=datetime.utcnow)
+  barber = db.relationship("Barber", backref=db.backref("reviews", lazy=True))
 
-# ----------------- التصاميم والصفحات (HTML Templates) -----------------
-BASE_LAYOUT = """
+
+# ----------------- Cyber UI Templates -----------------
+
+BASE_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>منصة الحلاقة الذكية</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>منصة النخبة - حجز الحلاقة الذكي</title>
     <style>
-        body { background-color: #f8f9fa; font-family: Tahoma, sans-serif; }
-        .navbar { background-color: #212529; }
-        .navbar-brand, .nav-link { color: #fff !important; }
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+        :root {
+            --primary: #f59e0b;
+            --primary-hover: #d97706;
+            --bg-main: #0b0f19;
+            --card-bg: #131c2e;
+            --input-bg: #1a263d;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border-color: #2a3b5e;
+            --danger: #f43f5e;
+            --success: #10b981;
+            --radius: 16px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Cairo', sans-serif; }
+        body { background-color: var(--bg-main); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
+        header { background: rgba(19, 28, 46, 0.98); border-bottom: 1px solid var(--border-color); padding: 0.8rem 1.2rem; position: sticky; top: 0; z-index: 100; }
+        .nav-container { max-width: 1100px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 1.3rem; font-weight: 900; color: #fff; text-decoration: none; display: flex; align-items: center; gap: 5px; }
+        .logo span { color: var(--primary); }
+        .admin-link { font-size: 0.8rem; color: var(--text-muted); text-decoration: none; padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 8px; transition: 0.2s; }
+        .admin-link:hover { color: var(--primary); border-color: var(--primary); }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.85); backdrop-filter: blur(5px); display: none; justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
+        .modal-box { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); width: 100%; max-width: 380px; padding: 25px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); text-align: center; }
+        .modal-title { font-size: 1.25rem; font-weight: 800; margin-bottom: 8px; color: #fff; }
+        .modal-desc { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 20px; }
+        .modal-btn { display: block; width: 100%; padding: 12px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 0.95rem; margin-bottom: 12px; }
+        .modal-btn-primary { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #0b0f19; }
+        .modal-btn-outline { background: var(--input-bg); color: var(--text-main); border: 1px solid var(--border-color); }
+        .modal-close { background: transparent; border: none; color: var(--text-muted); font-size: 0.88rem; cursor: pointer; margin-top: 5px; }
+        .container { max-width: 900px; width: 94%; margin: 25px auto; background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: var(--radius); flex: 1; }
+        .barbers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; margin-top: 15px; }
+        .barber-card { background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; gap: 15px; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 7px; font-weight: 600; color: var(--text-muted); font-size: 0.88rem; }
+        input, select, textarea { width: 100%; padding: 12px 15px; background: var(--input-bg); border: 2px solid var(--border-color); border-radius: 12px; font-size: 0.95rem; color: var(--text-main); outline: none; }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary); background: #1e293b; }
+        .btn { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #0b0f19; border: none; padding: 13px; border-radius: 12px; cursor: pointer; font-size: 0.95rem; font-weight: 800; width: 100%; text-align: center; text-decoration: none; display: block; }
+        .table-responsive { overflow-x: auto; margin-top: 20px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--input-bg); }
+        table { width: 100%; border-collapse: collapse; text-align: right; min-width: 500px; }
+        th, td { padding: 12px 15px; border-bottom: 1px solid var(--border-color); font-size: 0.9rem; }
+        th { background: rgba(11, 15, 25, 0.6); color: var(--text-muted); }
+        .alert { padding: 14px 18px; background: rgba(244, 63, 94, 0.15); color: #fb7185; margin-bottom: 20px; border-radius: 12px; font-weight: 600; border: 1px solid rgba(244, 63, 94, 0.3); }
+        .success { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
+        .badge { background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 700; }
+        .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+        .badge-danger { background: rgba(244, 63, 94, 0.15); color: #fb7185; }
+        footer { text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border-color); margin-top: auto; }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/">حلاقة برو</a>
-            <div>
-                <a class="btn btn-outline-light btn-sm" href="/admin_login">لوحة المشرف</a>
-                <a class="btn btn-outline-warning btn-sm" href="/barber_login">دخول الحلاقين</a>
-            </div>
+    <header>
+        <div class="nav-container">
+            <a href="{{ url_for('index') }}" class="logo">⚡ Prime<span>Cut</span></a>
+            <a href="{{ url_for('admin_login') }}" class="admin-link">👑 لوحة المالك</a>
         </div>
-    </nav>
+    </header>
     <div class="container">
         {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert {{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
         {% endwith %}
         {% block content %}{% endblock %}
     </div>
+    <div id="barberModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title">🔐 بوابة الحلاقين</div>
+            <div class="modal-desc">اختر العملية المطلوبة للمتابعة:</div>
+            <a href="{{ url_for('barber_login') }}" class="modal-btn modal-btn-primary">🔑 تسجيل دخول حلاق مسجل</a>
+            <a href="{{ url_for('barber_register') }}" class="modal-btn modal-btn-outline">✨ تسجيل حساب جديد (برمز التفعيل)</a>
+            <button onclick="toggleBarberModal()" class="modal-close">إلغاء</button>
+        </div>
+    </div>
+    <script>
+        function toggleBarberModal() {
+            const modal = document.getElementById('barberModal');
+            modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
+        }
+    </script>
+    <footer>جميع الحقوق محفوظة &copy; 2026 - نظام حجز صالونات الحلاقة الذكي</footer>
 </body>
 </html>
 """
 
-HOME_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<div class="row text-center">
-    <div class="col-md-12">
-        <h1 class="display-5 fw-bold">اختر الحلاق واحجز موعدك بكل سهولة</h1>
-        <p class="lead text-muted">منصة متكاملة لإدارة مواعيد الحلاقة وتقييم الخدمات.</p>
-        <hr class="my-4">
+INDEX_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px;">
+        <button onclick="toggleBarberModal()" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #0b0f19; border: none; padding: 16px; border-radius: 14px; font-weight: 800; font-size: 1rem; cursor: pointer; text-align: center;">
+            ✂️ تسجيل / دخول حلاق
+        </button>
+        <a href="#salons-section" style="background: var(--input-bg); color: var(--text-main); border: 2px solid var(--border-color); padding: 16px; border-radius: 14px; font-weight: 800; font-size: 1rem; text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            👤 تصفح الصالونات <span style="font-size: 0.8rem; color: var(--primary);">(اختر واجز)</span>
+        </a>
     </div>
-</div>
-<div class="row">
-    {% for barber in barbers %}
-    <div class="col-md-4 mb-3">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title">{{ barber.first_name }} {{ barber.last_name }}</h5>
-                <p class="card-text text-muted">📍 المكان: {{ barber.location }}</p>
-                <p class="card-text">📞 الهاتف: {{ barber.phone }}</p>
-                <a href="/book/{{ barber.id }}" class="btn btn-primary w-100 mb-2">حجز موعد</a>
-                <a href="/barber/{{ barber.id }}" class="btn btn-outline-secondary w-100">عرض الملف والتقييمات</a>
+    <div id="salons-section">
+        <h3>💈 صالونات الحلاقة المتاحة للحجز والتقييمات</h3>
+        <div class="barbers-grid">
+            {% for item in active_barbers %}
+            <div class="barber-card">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <h4 style="font-size: 1.15rem; color: var(--text-main);">✨ {{ item.barber.username }}</h4>
+                        <span style="color: #f59e0b; font-weight: bold; font-size: 0.9rem;">★ {{ item.avg_rating }} <span style="color: var(--text-muted); font-size: 0.75rem;">({{ item.total_reviews }})</span></span>
+                    </div>
+                    <p style="margin-top: 8px; font-size: 0.88rem; color: var(--text-muted);">👤 <b>الحلاق:</b> {{ item.barber.first_name }} {{ item.barber.last_name }}</p>
+                    <p style="margin-top: 4px; font-size: 0.88rem; color: var(--text-muted);">📍 <b>الموقع:</b> {{ item.barber.location }}</p>
+                    <p style="margin-top: 4px; font-size: 0.88rem; color: var(--text-muted);">📞 <b>الهاتف:</b> {{ item.barber.phone }}</p>
+                </div>
+                <a href="{{ url_for('barber_profile', barber_id=item.barber.id) }}" class="btn">عرض الخدمات والتقييمات 🚀</a>
             </div>
+            {% else %}
+            <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px;">
+                لا توجد صالونات حلاقة نشطة حالياً.
+            </div>
+            {% endfor %}
         </div>
     </div>
-    {% endfor %}
-</div>
-{% endblock %}
-"""
+""",
+)
 
-BOOK_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card shadow">
-            <div class="card-body">
-                <h3>حجز موعد عند الحلاق: {{ barber.first_name }} {{ barber.last_name }}</h3>
-                <form method="POST">
-                    <div class="mb-3"><label>اسمك الكريم</label><input type="text" name="client_name" class="form-control" required></div>
-                    <div class="mb-3"><label>رقم هاتفك</label><input type="text" name="client_phone" class="form-control" required></div>
-                    <div class="mb-3"><label>نوع الخدمة</label><input type="text" name="service_type" class="form-control" placeholder="مثال: حلاقة شعر + لحية" required></div>
-                    <div class="mb-3"><label>وقت الموعد المفضل</label><input type="text" name="appointment_time" class="form-control" placeholder="مثال: اليوم على الساعة 4 عصراً" required></div>
-                    <button type="submit" class="btn btn-success w-100">إرسال طلب الحجز</button>
-                </form>
-            </div>
+BARBER_PROFILE_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <a href="{{ url_for('index') }}" style="color: var(--primary); text-decoration: none; font-weight: 700; display: inline-block; margin-bottom: 15px; font-size: 0.9rem;">← العودة للقائمة</a>
+    <div style="background: rgba(11, 15, 25, 0.4); padding: 20px; border-radius: 14px; border: 1px solid var(--border-color); margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px;">
+        <div>
+            <h3 style="margin-bottom: 10px; color: var(--primary);">💈 {{ barber.username }}</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 4px;">📍 <b>المكان:</b> {{ barber.location }}</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 4px;">👤 <b>المشرف:</b> {{ barber.first_name }} {{ barber.last_name }}</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">📞 <b>الهاتف:</b> {{ barber.phone }}</p>
+        </div>
+        <div style="background: var(--input-bg); padding: 12px 20px; border-radius: 12px; border: 1px solid var(--border-color); text-align: center;">
+            <div style="font-size: 1.5rem; color: #f59e0b; font-weight: bold;">★ {{ avg_rating }}</div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">({{ total_reviews }} تقييم إجمالي)</div>
         </div>
     </div>
-</div>
-{% endblock %}
-"""
-
-BARBER_LOGIN_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="card shadow">
-            <div class="card-body">
-                <h3>تسجيل دخول الحلاقين</h3>
-                <form method="POST">
-                    <div class="mb-3"><label>اسم المستخدم</label><input type="text" name="username" class="form-control" required></div>
-                    <div class="mb-3"><label>كلمة المرور</label><input type="password" name="password" class="form-control" required></div>
-                    <button type="submit" class="btn btn-primary w-100">دخول</button>
-                </form>
-                <div class="mt-3 text-center"><a href="/barber_register">تسجيل حساب جديد بكود تفعيل</a></div>
-            </div>
+    <h4 style="margin-bottom: 15px; font-size: 1.15rem; color: var(--text-main);">الخدمات المتاحة والأسعار</h4>
+    <div class="table-responsive" style="margin-bottom: 25px;">
+        <table>
+            <thead><tr><th>الخدمة</th><th>السعر</th><th>المدة</th></tr></thead>
+            <tbody>
+                {% for s in services %}
+                <tr><td><b>{{ s.name }}</b></td><td><span class="badge">{{ s.price }} دج</span></td><td>⏱️ {{ s.duration }} دقيقة</td></tr>
+                {% else %}
+                <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">لا توجد خدمات مضافة حالياً.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if services %}
+    <form method="POST" action="{{ url_for('book_appointment', barber_id=barber.id) }}" style="background: rgba(11, 15, 25, 0.4); padding: 20px; border-radius: 14px; border: 1px solid var(--border-color); margin-bottom: 30px;">
+        <h4 style="margin-bottom: 15px; color: var(--text-main); font-size: 1.1rem;">📅 حجز موعد جديد</h4>
+        <div class="form-group"><label>الاسم الكامل:</label><input type="text" name="customer_name" required></div>
+        <div class="form-group"><label>رقم الهاتف:</label><input type="text" name="phone" required></div>
+        <div class="form-group"><label>اختر الخدمة:</label>
+            <select name="service_id" required>
+                <option value="">-- اختر الخدمة --</option>
+                {% for s in services %}<option value="{{ s.id }}">{{ s.name }} — ({{ s.price }} دج / ⏱️ {{ s.duration }} دقيقة)</option>{% endfor %}
+            </select>
         </div>
-    </div>
-</div>
-{% endblock %}
-"""
-
-BARBER_REGISTER_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card shadow">
-            <div class="card-body">
-                <h3>تسجيل حساب حلاق جديد (6 أشهر)</h3>
-                <form method="POST">
-                    <div class="mb-3"><label>اسم المستخدم</label><input type="text" name="username" class="form-control" required></div>
-                    <div class="mb-3"><label>كلمة المرور</label><input type="password" name="password" class="form-control" required></div>
-                    <div class="mb-3"><label>الاسم الأول</label><input type="text" name="first_name" class="form-control" required></div>
-                    <div class="mb-3"><label>اسم اللقب</label><input type="text" name="last_name" class="form-control" required></div>
-                    <div class="mb-3"><label>رقم الهاتف</label><input type="text" name="phone" class="form-control" required></div>
-                    <div class="mb-3"><label>مكان المحل</label><input type="text" name="location" class="form-control" required></div>
-                    <div class="mb-3"><label>كود التفعيل (أطلبه من المشرف)</label><input type="text" name="activation_code" class="form-control" required></div>
-                    <button type="submit" class="btn btn-success w-100">تسجيل الحساب</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-"""
-
-BARBER_DASHBOARD_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<h2>لوحة تحكم الحلاق: {{ barber.first_name }}</h2>
-<a href="/barber_logout" class="btn btn-danger btn-sm mb-3">تسجيل الخروج</a>
-<hr>
-<h4>طلبات المواعيد</h4>
-<table class="table table-striped">
-    <thead>
-        <tr><th>الزبون</th><th>الهاتف</th><th>الخدمة</th><th>الوقت</th><th>الحالة</th><th>الإجراء</th></tr>
-    </thead>
-    <tbody>
-        {% for appt in appointments %}
-        <tr>
-            <td>{{ appt.client_name }}</td>
-            <td>{{ appt.client_phone }}</td>
-            <td>{{ appt.service_type }}</td>
-            <td>{{ appt.appointment_time }}</td>
-            <td>{{ appt.status }}</td>
-            <td>
-                <a href="/appointment/accept/{{ appt.id }}" class="btn btn-success btn-sm">قبول</a>
-                <a href="/appointment/reject/{{ appt.id }}" class="btn btn-danger btn-sm">رفض</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% endblock %}
-"""
-
-ADMIN_LOGIN_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-5">
-        <div class="card shadow">
-            <div class="card-body">
-                <h3>تسجيل دخول المشرف العام</h3>
-                <form method="POST">
-                    <div class="mb-3"><label>كلمة مرور المشرف</label><input type="password" name="password" class="form-control" required></div>
-                    <button type="submit" class="btn btn-dark w-100">دخول الإدارة</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-"""
-
-ADMIN_DASHBOARD_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<h2>لوحة المشرف العام</h2>
-<a href="/admin_logout" class="btn btn-danger btn-sm mb-3">خروج</a>
-<hr>
-<h4>توليد كود تفعيل جديد (صالحة لـ 6 أشهر)</h4>
-<form method="POST" action="/admin/generate_code" class="mb-4">
-    <button type="submit" class="btn btn-primary">توليد كود جديد</button>
-</form>
-<h4>أكواد التفعيل الموجودة</h4>
-<ul class="list-group">
-    {% for code in codes %}
-    <li class="list-group-item d-flex justify-content-between align-items-center">
-        {{ code.code }}
-        <span>{% if code.is_used %}<span class="badge bg-danger">مستعمل</span>{% else %}<span class="badge bg-success">غير مستعمل</span>{% endif %}</span>
-    </li>
-    {% endfor %}
-</ul>
-{% endblock %}
-"""
-
-BARBER_PROFILE_TEMPLATE = BASE_LAYOUT + """
-{% block content %}
-<div class="row">
-    <div class="col-md-6">
-        <h3>{{ barber.first_name }} {{ barber.last_name }}</h3>
-        <p>📍 الموقع: {{ barber.location }}</p>
-        <p>📞 الهاتف: {{ barber.phone }}</p>
-        <a href="/book/{{ barber.id }}" class="btn btn-primary mb-3">احجز موعد الآن</a>
-    </div>
-    <div class="col-md-6">
-        <h4>تقييمات الزبائن</h4>
-        <form method="POST" action="/review/{{ barber.id }}" class="mb-4 card p-3">
-            <h5>أضف تقييمك</h5>
-            <div class="mb-2"><input type="text" name="client_name" class="form-control" placeholder="اسمك" required></div>
-            <div class="mb-2">
-                <select name="rating" class="form-control">
-                    <option value="5">⭐⭐⭐⭐⭐ (5/5)</option>
-                    <option value="4">⭐⭐⭐⭐ (4/5)</option>
-                    <option value="3">⭐⭐⭐ (3/5)</option>
-                    <option value="2">⭐⭐ (2/5)</option>
-                    <option value="1">⭐ (1/5)</option>
+        <div class="form-group"><label>تاريخ ووقت الموعد:</label><input type="datetime-local" name="date_time" required></div>
+        <button type="submit" class="btn">تأكيد حجز الموعد الآن 🚀</button>
+    </form>
+    {% endif %}
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;">
+        <form method="POST" action="{{ url_for('add_review', barber_id=barber.id) }}" style="background: rgba(11, 15, 25, 0.4); padding: 20px; border-radius: 14px; border: 1px solid var(--border-color);">
+            <h4 style="margin-bottom: 15px; color: var(--text-main); font-size: 1.1rem;">⭐ أضف تقييمك للحلاق</h4>
+            <div class="form-group"><label>اسمك:</label><input type="text" name="client_name" required></div>
+            <div class="form-group"><label>التقييم:</label>
+                <select name="rating" required>
+                    <option value="5">★★★★★ (5 - ممتاز)</option><option value="4">★★★★☆ (4 - جيد جداً)</option><option value="3">★★★☆☆ (3 - متوسط)</option><option value="2">★★☆☆☆ (2 - سيء)</option><option value="1">★☆☆☆☆ (1 - سيء جداً)</option>
                 </select>
             </div>
-            <div class="mb-2"><textarea name="comment" class="form-control" placeholder="تعليقك"></textarea></div>
-            <button type="submit" class="btn btn-success btn-sm">إرسال التقييم</button>
+            <div class="form-group"><label>التعليق:</label><textarea name="comment" rows="2"></textarea></div>
+            <button type="submit" class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #fff;">إرسال التقييم 🌟</button>
         </form>
-        {% for review in reviews %}
-        <div class="card mb-2 p-2">
-            <strong>{{ review.client_name }} ({{ review.rating }}/5)</strong>
-            <p class="mb-0">{{ review.comment }}</p>
+        <div>
+            <h4 style="margin-bottom: 15px; font-size: 1.1rem; color: var(--text-main);">💬 آراء الزبائن والتقييمات</h4>
+            <div style="display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto;">
+                {% for rev in reviews %}
+                <div style="background: var(--input-bg); padding: 14px; border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <b style="font-size: 0.9rem;">{{ rev.client_name }}</b>
+                        <span style="color: #f59e0b; font-size: 0.85rem; font-weight: bold;">{% for i in range(rev.rating) %}★{% endfor %}</span>
+                    </div>
+                    {% if rev.comment %}<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">{{ rev.comment }}</p>{% endif %}
+                    <div style="font-size: 0.72rem; color: var(--text-muted); text-align: left;">{{ rev.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                </div>
+                {% else %}
+                <div style="text-align: center; color: var(--text-muted); padding: 30px; background: var(--input-bg); border-radius: 12px; border: 1px solid var(--border-color);">لا توجد تقييمات لهذا الحلاق حتى الآن.</div>
+                {% endfor %}
+            </div>
         </div>
-        {% endfor %}
     </div>
-</div>
-{% endblock %}
-"""
+""",
+)
 
-# ----------------- المسارات (Routes) -----------------
-@app.route('/')
-def home():
-    barbers = Barber.query.all()
-    return render_template_string(HOME_TEMPLATE, barbers=barbers)
+REGISTER_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <a href="{{ url_for('index') }}" style="color: var(--primary); text-decoration: none; font-weight: 700; display: inline-block; margin-bottom: 15px; font-size: 0.9rem;">← العودة للرئيسية</a>
+    <h3>📝 تسجيل حساب حلاق جديد</h3>
+    <form method="POST">
+        <div class="form-group"><label>كود التفعيل (من الإدارة):</label><input type="text" name="activation_code" required style="border-color: var(--primary);"></div>
+        <div class="form-group"><label>الاسم الحقيقي:</label><input type="text" name="first_name" required></div>
+        <div class="form-group"><label>اللقب:</label><input type="text" name="last_name" required></div>
+        <div class="form-group"><label>اسم المحل / الشهرة:</label><input type="text" name="username" required></div>
+        <div class="form-group"><label>رقم الهاتف الشخصي:</label><input type="text" name="phone" required></div>
+        <div class="form-group"><label>مكان العمل (المدينة، الحي):</label><input type="text" name="location" required></div>
+        <div class="form-group"><label>كلمة المرور:</label><input type="password" name="password" required></div>
+        <button type="submit" class="btn">تفعيل الحساب والبدء فورا 💼</button>
+    </form>
+""",
+)
 
-@app.route('/book/<int:barber_id>', methods=['GET', 'POST'])
-def book(barber_id):
-    barber = Barber.query.get_or_404(barber_id)
-    if request.method == 'POST':
-        client_name = request.form.get('client_name')
-        client_phone = request.form.get('client_phone')
-        service_type = request.form.get('service_type')
-        appointment_time = request.form.get('appointment_time')
-        appt = Appointment(barber_id=barber.id, client_name=client_name, client_phone=client_phone, service_type=service_type, appointment_time=appointment_time)
-        db.session.add(appt)
-        db.session.commit()
-        flash('تم إرسال طلب الحجز بنجاح!', 'success')
-        return redirect(url_for('home'))
-    return render_template_string(BOOK_TEMPLATE, barber=barber)
+LOGIN_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <a href="{{ url_for('index') }}" style="color: var(--primary); text-decoration: none; font-weight: 700; display: inline-block; margin-bottom: 15px; font-size: 0.9rem;">← العودة للرئيسية</a>
+    <h3>🔐 دخول لوحة تحكم الحلاقين</h3>
+    <form method="POST">
+        <div class="form-group"><label>اسم المحل / الشهرة:</label><input type="text" name="username" required></div>
+        <div class="form-group"><label>كلمة المرور:</label><input type="password" name="password" required></div>
+        <button type="submit" class="btn">تسجيل الدخول 🔓</button>
+    </form>
+""",
+)
 
-@app.route('/barber/<int:barber_id>')
+DASHBOARD_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+        <div>
+            <h3 style="margin: 0;">✨ أهلاً بك، {{ barber.username }}</h3>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 4px;">📍 الموقع: {{ barber.location }}</p>
+            {% if barber.activation_code %}<p style="color: var(--success); font-size: 0.82rem; margin-top: 2px;">⏳ الاشتراك ينتهي في: {{ barber.activation_code.expires_at.strftime('%Y-%m-%d') }}</p>{% endif %}
+        </div>
+        <a href="{{ url_for('logout') }}" style="background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); padding: 8px 14px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">تسجيل الخروج 🚪</a>
+    </div>
+    <h4 style="margin-top: 25px; font-size: 1.15rem; color: var(--text-main);">إدارة الخدمات والأسعار</h4>
+    <form action="{{ url_for('add_service') }}" method="POST" style="background: rgba(11, 15, 25, 0.4); padding: 18px; border-radius: 12px; border: 1px solid var(--border-color); margin-top: 10px;">
+        <div class="form-group"><label>اسم الخدمة:</label><input type="text" name="name" required></div>
+        <div class="form-group"><label>السعر (دج):</label><input type="number" step="0.01" name="price" required></div>
+        <div class="form-group"><label>المدة (دقيقة):</label><input type="number" name="duration" required></div>
+        <button type="submit" class="btn">إضافة الخدمة ➕</button>
+    </form>
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>الخدمة</th><th>السعر</th><th>المدة</th><th>إجراء</th></tr></thead>
+            <tbody>
+                {% for s in services %}
+                <tr><td><b>{{ s.name }}</b></td><td><span class="badge">{{ s.price }} دج</span></td><td>⏱️ {{ s.duration }} دقيقة</td><td><a href="{{ url_for('delete_service', id=s.id) }}" style="color: #fb7185; text-decoration: none; font-weight: bold;">حذف 🗑️</a></td></tr>
+                {% else %}
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">لا توجد خدمات مضافة.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <h4 style="margin-top: 35px; font-size: 1.15rem; color: var(--text-main);">طلبات الحجز الواردة</h4>
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>الزبون</th><th>الهاتف</th><th>الخدمة</th><th>الموعد</th><th>الحالة</th><th>الإجراءات</th></tr></thead>
+            <tbody>
+                {% for app in appointments %}
+                <tr>
+                    <td><b>{{ app.customer_name }}</b></td><td>{{ app.phone }}</td><td>{{ app.service.name }}</td><td>{{ app.date_time }}</td>
+                    <td>
+                        {% if app.status == 'مؤكد' %}<span class="badge badge-success">مؤكد</span>
+                        {% elif app.status == 'ملغي' %}<span class="badge badge-danger">ملغي</span>
+                        {% else %}<span class="badge" style="background:rgba(245, 158, 11, 0.15); color:#f59e0b;">قيد الانتظار</span>{% endif %}
+                    </td>
+                    <td><a href="{{ url_for('update_status', id=app.id, status='مؤكد') }}" style="color: #34d399; text-decoration: none; font-weight: bold;">تأكيد</a> | <a href="{{ url_for('update_status', id=app.id, status='ملغي') }}" style="color: #fb7185; text-decoration: none; font-weight: bold;">إلغاء</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">لا توجد مواعيد جديدة.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+""",
+)
+
+ADMIN_LOGIN_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <a href="{{ url_for('index') }}" style="color: var(--primary); text-decoration: none; font-weight: 700; display: inline-block; margin-bottom: 15px; font-size: 0.9rem;">← العودة للرئيسية</a>
+    <h3>👑 تسجيل دخول مالك المنصة</h3>
+    <form method="POST">
+        <div class="form-group"><label>كلمة مرور المالك:</label><input type="password" name="admin_password" required></div>
+        <button type="submit" class="btn">دخول لوحة التحكم 🚀</button>
+    </form>
+""",
+)
+
+ADMIN_DASHBOARD_TEMPLATE = BASE_TEMPLATE.replace(
+    "{% block content %}{% endblock %}",
+    """
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+        <h3>👑 لوحة تحكم المالك</h3>
+        <a href="{{ url_for('admin_logout') }}" style="background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); padding: 8px 14px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">تسجيل الخروج 🚪</a>
+    </div>
+    <form action="{{ url_for('generate_code') }}" method="POST" style="background: rgba(11, 15, 25, 0.4); padding: 18px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 25px;">
+        <button type="submit" class="btn">➕ توليد كود تفعيل جديد (صالح لـ 6 أشهر)</button>
+    </form>
+    <h4 style="margin-bottom: 15px; font-size: 1.15rem;">📊 إحصائيات الزبائن المقبولين يومياً حسب الصالون</h4>
+    <div class="table-responsive" style="margin-bottom: 30px;">
+        <table>
+            <thead><tr><th>اسم الصالون / الحلاق</th><th>التاريخ (اليوم)</th><th>عدد الزبائن المقبولين</th></tr></thead>
+            <tbody>
+                {% for stat in daily_stats %}
+                <tr><td><b>{{ stat.barber_name }}</b></td><td>{{ stat.day }}</td><td><span class="badge badge-success">{{ stat.count }} زبون</span></td></tr>
+                {% else %}
+                <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">لا توجد حجوزات مؤكدة حتى الآن.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <h4 style="margin-bottom: 15px; font-size: 1.15rem;">قائمة الأكواد وحالة الاشتراكات</h4>
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>كود التفعيل</th><th>الحالة</th><th>تاريخ التفعيل</th><th>تاريخ انتهاء الصلاحية</th><th>إجراء</th></tr></thead>
+            <tbody>
+                {% for c in codes %}
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <input type="text" id="code-{{ c.id }}" value="{{ c.code }}" readonly style="width: 120px; padding: 5px; font-family: monospace; font-size: 0.88rem; font-weight: bold; color: var(--primary); background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; text-align: center;">
+                            <button onclick="copyCode('code-{{ c.id }}', this)" style="background: rgba(245, 158, 11, 0.15); color: var(--primary); border: 1px solid rgba(245, 158, 11, 0.3); padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-weight: bold;">نسخ 📋</button>
+                        </div>
+                    </td>
+                    <td>
+                        {% if c.is_used %}
+                            {% if c.expires_at and c.expires_at < now %}<span class="badge badge-danger">منتهي الصلاحية ⌛</span>
+                            {% else %}<span class="badge badge-success">مفعل ونشط ✔️</span>{% endif %}
+                        {% else %}<span class="badge" style="background:rgba(245, 158, 11, 0.15); color:#f59e0b;">متاح للبيع 🟢</span>{% endif %}
+                    </td>
+                    <td>{{ c.activated_at.strftime('%Y-%m-%d') if c.activated_at else '-' }}</td>
+                    <td>{{ c.expires_at.strftime('%Y-%m-%d') if c.expires_at else '-' }}</td>
+                    <td><a href="{{ url_for('delete_code', id=c.id) }}" style="color: #fb7185; text-decoration: none; font-weight: bold;">حذف 🗑️</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">لا توجد أكواد مولدة حتى الآن.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <script>
+        function copyCode(elementId, btn) {
+            const inputField = document.getElementById(elementId);
+            inputField.select();
+            try {
+                navigator.clipboard.writeText(inputField.value).then(() => showSuccess(btn));
+            } catch (err) {
+                showSuccess(btn);
+            }
+        }
+        function showSuccess(btn) {
+            const originalText = btn.innerText;
+            btn.innerText = "تم ✓";
+            setTimeout(() => { btn.innerText = originalText; }, 2000);
+        }
+    </script>
+""",
+)
+
+# ----------------- Routes -----------------
+
+@app.route("/")
+def index():
+  now = datetime.utcnow()
+  all_barbers = Barber.query.all()
+  active_barbers = []
+  for b in all_barbers:
+    if b.activation_code and b.activation_code.expires_at > now:
+      reviews = Review.query.filter_by(barber_id=b.id).all()
+      if reviews:
+        avg = sum([r.rating for r in reviews]) / len(reviews)
+        avg_rating = round(avg, 1)
+        total_reviews = len(reviews)
+      else:
+        avg_rating = 0.0
+        total_reviews = 0
+      active_barbers.append({"barber": b, "avg_rating": avg_rating, "total_reviews": total_reviews})
+  return render_template_string(INDEX_TEMPLATE, active_barbers=active_barbers)
+
+@app.route("/barber/<int:barber_id>")
 def barber_profile(barber_id):
-    barber = Barber.query.get_or_404(barber_id)
-    reviews = Review.query.filter_by(barber_id=barber.id).all()
-    return render_template_string(BARBER_PROFILE_TEMPLATE, barber=barber, reviews=reviews)
+  now = datetime.utcnow()
+  barber = Barber.query.get_or_404(barber_id)
+  if not barber.activation_code or barber.activation_code.expires_at <= now:
+    flash("عذراً، هذا الحلاق منتهي الاشتراك حالياً.", "alert")
+    return redirect(url_for("index"))
+  services = Service.query.filter_by(barber_id=barber.id).all()
+  reviews = Review.query.filter_by(barber_id=barber.id).order_by(Review.created_at.desc()).all()
+  avg_rating = round(sum([r.rating for r in reviews]) / len(reviews), 1) if reviews else 0.0
+  total_reviews = len(reviews)
+  return render_template_string(BARBER_PROFILE_TEMPLATE, barber=barber, services=services, reviews=reviews, avg_rating=avg_rating, total_reviews=total_reviews)
 
-@app.route('/review/<int:barber_id>', methods=['POST'])
+@app.route("/book/<int:barber_id>", methods=["POST"])
+def book_appointment(barber_id):
+  customer_name = request.form.get("customer_name")
+  phone = request.form.get("phone")
+  service_id = request.form.get("service_id")
+  date_time = request.form.get("date_time")
+  if customer_name and phone and service_id and date_time:
+    db.session.add(Appointment(barber_id=barber_id, customer_name=customer_name, phone=phone, service_id=service_id, date_time=date_time, status="قيد الانتظار"))
+    db.session.commit()
+    flash("تم إرسال طلب الحجز بنجاح!", "success")
+  return redirect(url_for("barber_profile", barber_id=barber_id))
+
+@app.route("/review/<int:barber_id>", methods=["POST"])
 def add_review(barber_id):
-    client_name = request.form.get('client_name')
-    rating = int(request.form.get('rating'))
-    comment = request.form.get('comment')
-    review = Review(barber_id=barber_id, client_name=client_name, rating=rating, comment=comment)
-    db.session.add(review)
+  client_name = request.form.get("client_name")
+  rating = request.form.get("rating")
+  comment = request.form.get("comment")
+  if client_name and rating:
+    db.session.add(Review(barber_id=barber_id, client_name=client_name, rating=int(rating), comment=comment))
     db.session.commit()
-    flash('شكراً لك، تم إضافة تقييمك بنجاح!', 'success')
-    return redirect(url_for('barber_profile', barber_id=barber_id))
+    flash("تم إضافة تقييمك بنجاح، شكراً لك!", "success")
+  return redirect(url_for("barber_profile", barber_id=barber_id))
 
-@app.route('/barber_login', methods=['GET', 'POST'])
-def barber_login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        barber = Barber.query.filter_by(username=username, password=password).first()
-        if barber:
-            if datetime.utcnow() > barber.expiry_date:
-                flash('انتهت صلاحية حسابك (6 أشهر)، يرجى تجديد الكود لدى الإدارة.', 'danger')
-                return redirect(url_for('barber_login'))
-            session['barber_id'] = barber.id
-            return redirect(url_for('barber_dashboard'))
-        flash('اسم المستخدم أو كلمة المرور غير صحيحة', 'danger')
-    return render_template_string(BARBER_LOGIN_TEMPLATE)
-
-@app.route('/barber_register', methods=['GET', 'POST'])
+@app.route("/barber/register", methods=["GET", "POST"])
 def barber_register():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        first_name = request.form.get('first_name')
-        last_name = request.form.get('last_name')
-        phone = request.form.get('phone')
-        location = request.form.get('location')
-        code_str = request.form.get('activation_code')
-        
-        code_obj = ActivationCode.query.filter_by(code=code_str, is_used=False).first()
-        if not code_obj:
-            flash('كود التفعيل غير صالح أو تم استخدامه مسبقاً!', 'danger')
-            return redirect(url_for('barber_register'))
-        
-        expiry = datetime.utcnow() + timedelta(days=180)
-        new_barber = Barber(username=username, password=password, first_name=first_name, last_name=last_name, phone=phone, location=location, activation_code_id=code_obj.id, expiry_date=expiry)
-        code_obj.is_used = True
-        
-        db.session.add(new_barber)
-        db.session.commit()
-        flash('تم إنشاء الحساب بنجاح، يمكنك تسجيل الدخول الآن.', 'success')
-        return redirect(url_for('barber_login'))
-    return render_template_string(BARBER_REGISTER_TEMPLATE)
+  if request.method == "POST":
+    activation_code = request.form.get("activation_code").strip()
+    first_name = request.form.get("first_name")
+    last_name = request.form.get("last_name")
+    username = request.form.get("username")
+    phone = request.form.get("phone")
+    location = request.form.get("location")
+    password = request.form.get("password")
 
-@app.route('/barber_dashboard')
-def barber_dashboard():
-    if 'barber_id' not in session:
-        return redirect(url_for('barber_login'))
-    barber = Barber.query.get(session['barber_id'])
-    appointments = Appointment.query.filter_by(barber_id=barber.id).all()
-    return render_template_string(BARBER_DASHBOARD_TEMPLATE, barber=barber, appointments=appointments)
+    code_obj = ActivationCode.query.filter_by(code=activation_code, is_used=False).first()
+    if not code_obj:
+      flash("كود التفعيل غير صالح أو مستخدم مسبقاً!", "alert")
+      return render_template_string(REGISTER_TEMPLATE)
 
-@app.route('/barber_logout')
-def barber_logout():
-    session.pop('barber_id', None)
-    return redirect(url_for('home'))
+    if Barber.query.filter_by(username=username).first():
+      flash("اسم المحل مستخدم مسبقاً، اختر اسماً آخر.", "alert")
+    else:
+      now = datetime.utcnow()
+      code_obj.is_used = True
+      code_obj.activated_at = now
+      code_obj.expires_at = now + timedelta(days=180)
+      
+      new_barber = Barber(activation_code_id=code_obj.id, first_name=first_name, last_name=last_name, username=username, phone=phone, location=location, password=password)
+      db.session.add(new_barber)
+      db.session.commit()
+      flash("تم تفعيل حسابك بنجاح لمدة 6 أشهر! سجل دخولك الآن.", "success")
+      return redirect(url_for("barber_login"))
+  return render_template_string(REGISTER_TEMPLATE)
 
-@app.route('/appointment/accept/<int:appt_id>')
-def accept_appointment(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
-    appt.status = 'مقبول'
+@app.route("/barber/login", methods=["GET", "POST"])
+def barber_login():
+  if request.method == "POST":
+    barber = Barber.query.filter_by(username=request.form.get("username"), password=request.form.get("password")).first()
+    if barber:
+      if not barber.activation_code or barber.activation_code.expires_at <= datetime.utcnow():
+        flash("عذراً، لقد انتهت صلاحية حسابك (مرت 6 أشهر).", "alert")
+      else:
+        session["barber_id"] = barber.id
+        return redirect(url_for("dashboard"))
+    else:
+      flash("بيانات الدخول غير صحيحة!", "alert")
+  return render_template_string(LOGIN_TEMPLATE)
+
+@app.route("/barber/dashboard")
+def dashboard():
+  barber_id = session.get("barber_id")
+  if not barber_id: return redirect(url_for("barber_login"))
+  barber = Barber.query.get(barber_id)
+  if not barber or not barber.activation_code or barber.activation_code.expires_at <= datetime.utcnow():
+    session.pop("barber_id", None)
+    flash("انتهت صلاحية حسابك.", "alert")
+    return redirect(url_for("barber_login"))
+  return render_template_string(DASHBOARD_TEMPLATE, barber=barber, services=Service.query.filter_by(barber_id=barber_id).all(), appointments=Appointment.query.filter_by(barber_id=barber_id).order_by(Appointment.date_time.desc()).all())
+
+@app.route("/barber/add_service", methods=["POST"])
+def add_service():
+  barber_id = session.get("barber_id")
+  if not barber_id: return redirect(url_for("barber_login"))
+  if request.form.get("name") and request.form.get("price") and request.form.get("duration"):
+    db.session.add(Service(barber_id=barber_id, name=request.form.get("name"), price=float(request.form.get("price")), duration=int(request.form.get("duration"))))
     db.session.commit()
-    return redirect(url_for('barber_dashboard'))
+    flash("تمت إضافة الخدمة بنجاح", "success")
+  return redirect(url_for("dashboard"))
 
-@app.route('/appointment/reject/<int:appt_id>')
-def reject_appointment(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
-    appt.status = 'مرفوض'
+@app.route("/barber/delete_service/<int:id>")
+def delete_service(id):
+  barber_id = session.get("barber_id")
+  if not barber_id: return redirect(url_for("barber_login"))
+  service = Service.query.get_or_404(id)
+  if service.barber_id == barber_id:
+    db.session.delete(service)
     db.session.commit()
-    return redirect(url_for('barber_dashboard'))
+    flash("تم حذف الخدمة بنجاح", "success")
+  return redirect(url_for("dashboard"))
 
-@app.route('/admin_login', methods=['GET', 'POST'])
+@app.route("/barber/update/<int:id>/<status>")
+def update_status(id, status):
+  barber_id = session.get("barber_id")
+  if not barber_id: return redirect(url_for("barber_login"))
+  app_item = Appointment.query.get_or_404(id)
+  if app_item.barber_id == barber_id:
+    app_item.status = status
+    db.session.commit()
+  return redirect(url_for("dashboard"))
+
+@app.route("/barber/logout")
+def logout():
+  session.pop("barber_id", None)
+  return redirect(url_for("index"))
+
+# ----------------- Admin Routes -----------------
+
+ADMIN_SECRET_KEY = "admin123"
+
+@app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    if request.method == 'POST':
-        if request.form.get('password') == 'admin123':
-            session['is_admin'] = True
-            return redirect(url_for('admin_dashboard'))
-        flash('كلمة مرور المشرف خاطئة', 'danger')
-    return render_template_string(ADMIN_LOGIN_TEMPLATE)
+  if request.method == "POST":
+    if request.form.get("admin_password") == ADMIN_SECRET_KEY:
+      session["is_admin"] = True
+      return redirect(url_for("admin_dashboard"))
+    else:
+      flash("كلمة مرور المالك غير صحيحة!", "alert")
+  return render_template_string(ADMIN_LOGIN_TEMPLATE)
 
-@app.route('/admin_dashboard')
+@app.route("/admin/dashboard")
 def admin_dashboard():
-    if not session.get('is_admin'):
-        return redirect(url_for('admin_login'))
-    codes = ActivationCode.query.all()
-    return render_template_string(ADMIN_DASHBOARD_TEMPLATE, codes=codes)
+  if not session.get("is_admin"): return redirect(url_for("admin_login"))
+  codes = ActivationCode.query.order_by(ActivationCode.created_at.desc()).all()
+  confirmed_apps = Appointment.query.filter_by(status="مؤكد").all()
+  stats_dict = {}
+  for app_item in confirmed_apps:
+    barber_name = app_item.barber.username if app_item.barber else "غير معروف"
+    day_str = app_item.updated_at.strftime("%Y-%m-%d") if app_item.updated_at else "اليوم"
+    key = (barber_name, day_str)
+    stats_dict[key] = stats_dict.get(key, 0) + 1
+  daily_stats = [{"barber_name": k[0], "day": k[1], "count": v} for k, v in stats_dict.items()]
+  return render_template_string(ADMIN_DASHBOARD_TEMPLATE, codes=codes, daily_stats=daily_stats, now=datetime.utcnow())
 
-@app.route('/admin/generate_code', methods=['POST'])
+@app.route("/admin/generate_code", methods=["POST"])
 def generate_code():
-    if not session.get('is_admin'):
-        return redirect(url_for('admin_login'))
-    import uuid
-    new_code = str(uuid.uuid4())[:8].upper()
-    code_obj = ActivationCode(code=new_code)
-    db.session.add(code_obj)
-    db.session.commit()
-    flash(f'تم توليد الكود بنجاح: {new_code}', 'success')
-    return redirect(url_for('admin_dashboard'))
+  if not session.get("is_admin"): return redirect(url_for("admin_login"))
+  random_part = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
+  new_code_str = f"CUT-{random_part[:4]}-{random_part[4:]}"
+  db.session.add(ActivationCode(code=new_code_str))
+  db.session.commit()
+  flash(f"تم توليد الكود بنجاح: {new_code_str}", "success")
+  return redirect(url_for("admin_dashboard"))
 
-@app.route('/admin_logout')
+@app.route("/admin/delete_code/<int:id>")
+def delete_code(id):
+  if not session.get("is_admin"): return redirect(url_for("admin_login"))
+  db.session.delete(ActivationCode.query.get_or_404(id))
+  db.session.commit()
+  flash("تم حذف الكود بنجاح", "success")
+  return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/logout")
 def admin_logout():
-    session.pop('is_admin', None)
-    return redirect(url_for('home'))
+  session.pop("is_admin", None)
+  return redirect(url_for("index"))
 
-# ----------------- إنشاء الجداول عند بدء التشغيل -----------------
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    app.run(host='0.0.0.0', port=5000)
+
+if __name__ == "__main__":
+  with app.app_context():
+    # تم إزالة db.drop_all() لكي لا يتم حذف قاعدة البيانات في كل مرة يعمل فيها السيرفر
+    db.create_all()
+  app.run(host="0.0.0.0", port=5000, debug=True)

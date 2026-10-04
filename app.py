@@ -671,7 +671,5 @@ def admin_logout():
 
 if __name__ == "__main__":
   with app.app_context():
-    # إعادة إنشاء الجداول نظيفة في السحابة لتجنب أي تعارض في الأعمدة
-    db.drop_all()
-    db.create_all()
+    db.create_all()  # هذا السطر ينشئ جميع الجداول تلقائياً إذا لم تكن موجودة
   app.run(host="0.0.0.0", port=5000, debug=True)
